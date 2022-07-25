@@ -1,3 +1,7 @@
+# GreenifyOS 
+
+A custom flavor of Prusa's buddy board firmware for Prusa MINI. Built with Prusa's provided utils and [PNG2Prusa](https://github.com/CM2205/PNG2PrusaFW). 
+
 # Buddy
 [![GitHub release](https://img.shields.io/github/release/prusa3d/Prusa-Firmware-Buddy.svg)](https://github.com/prusa3d/Prusa-Firmware-Buddy/releases)
 [![Build Status](https://holly.prusa3d.com/buildStatus/icon?job=Prusa-Firmware-Buddy%2FMultibranch%2Fmaster)](https://holly.prusa3d.com/job/Prusa-Firmware-Buddy/job/Multibranch/job/master/)
