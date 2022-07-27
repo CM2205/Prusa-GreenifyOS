@@ -1,6 +1,11 @@
 # GreenifyOS 
 
-A custom flavor of Prusa's buddy board firmware for Prusa MINI. Built with Prusa's provided utils and [PNG2Prusa](https://github.com/CM2205/PNG2PrusaFW). 
+A custom flavor of Prusa's buddy board firmware for Prusa MINI. Built with Prusa's provided utils and [PNG2Prusa](https://github.com/CM2205/PNG2PrusaFW), a Java script to automate the conversion of PNG images into Prusa's .c image files. 
+
+The source code provided here is identical to that of the official Prusa FW with small exceptions related to the cosmet adjustments: 
+
+1. The images located in src/gui/res/png andsrc/gui/res/cc have green UI elements instead of the default orange color. 
+2. The GUI's orange color (defined in src/gui/include/guitypes.h) has been overwritten in favor of the customized green color. This is the change responsible for changing the GUI's orange menu to the customized green color. 
 
 # Buddy
 [![GitHub release](https://img.shields.io/github/release/prusa3d/Prusa-Firmware-Buddy.svg)](https://github.com/prusa3d/Prusa-Firmware-Buddy/releases)
