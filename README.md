@@ -1,3 +1,17 @@
+# GreenifyOS 
+### Current revision based on Prusa FW (commit BA522e1, 24 July 2022) 
+
+A custom flavor of Prusa's buddy board firmware for Prusa MINI. Built with Prusa's provided utils and [PNG2Prusa](https://github.com/CM2205/PNG2PrusaFW), a Java script to automate the conversion of PNG images into Prusa's .c image files. 
+
+The source code provided here is identical to that of the official Prusa FW with small exceptions related to the cosmet adjustments: 
+1. The images located in src/gui/res/png andsrc/gui/res/cc have green UI elements instead of the default orange color. 
+2. The GUI's orange color (defined in src/gui/include/guitypes.h) has been overwritten in favor of the customized green color. This is the change responsible for changing the GUI's orange menu to the customized green color. 
+
+Note: This project was created with the most up to date source code at the time. As updates will likely be constant for the official firmware, I cannot guarantee that greenifyOS will remain in sync with these changes. In fact, it may very well be the case that updates only come on a fixed timeline (every couple of months or so). 
+
+For those interested in applying these cosmetic changes to a future release of Prusa firmware, the assets which were adjusted can be added to their respective locations and compiled alongside the stock firmware. Additionally, the change to the guitypes header can be manually implemented by the user. 
+
+
 # Buddy
 [![GitHub release](https://img.shields.io/github/release/prusa3d/Prusa-Firmware-Buddy.svg)](https://github.com/prusa3d/Prusa-Firmware-Buddy/releases)
 [![Build Status](https://holly.prusa3d.com/buildStatus/icon?job=Prusa-Firmware-Buddy%2FMultibranch%2Fmaster)](https://holly.prusa3d.com/job/Prusa-Firmware-Buddy/job/Multibranch/job/master/)
