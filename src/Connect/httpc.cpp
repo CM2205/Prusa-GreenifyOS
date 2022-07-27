@@ -186,7 +186,8 @@ optional<Error> HttpClient::send_request(const char *host, Connection *conn, Req
 
     CHECKED(buffer.write_fmt("%s %s HTTP/1.1\r\n", to_str(method), request.url()));
     CHECKED(buffer.header("Host", host));
-    CHECKED(buffer.header("Connection", "keep-alive"));
+    // TODO: Once we _read_ the response, we want Keep-Alive here
+    CHECKED(buffer.header("Connection", "close"));
     if (has_out_body(method)) {
         CHECKED(buffer.header("Transfer-Encoding", "chunked"));
         CHECKED(buffer.header("Content-Type", to_str(request.content_type())));
@@ -261,11 +262,6 @@ variant<Response, Error> HttpClient::parse_response(Connection *conn) {
             response.leftover_size = rest;
             response.content_type = parser.content_type;
             response.command_id = parser.command_id;
-            if (parser.keep_alive.has_value()) {
-                response.can_keep_alive = *parser.keep_alive;
-            } else {
-                response.can_keep_alive = (parser.version_major == 1) && (parser.version_minor >= 1);
-            }
             return std::move(response);
         }
     }

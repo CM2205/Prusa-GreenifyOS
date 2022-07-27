@@ -14,46 +14,37 @@
 #include "guitypes.hpp"
 #include "cmath_ext.h"
 
-// just to test the FW with fonts - will be refactored
-struct FCIndex {
-    uint16_t unc; /// utf8 character value (stripped of prefixes)
-    uint8_t charX, charY;
-};
+//#define UNACCENT
 
-static constexpr const FCIndex fontCharIndices[] =
-#include "fnt-indices.ipp"
-    static constexpr const uint32_t fontCharIndicesNumItems = sizeof(fontCharIndices) / sizeof(FCIndex);
+#ifdef UNACCENT
+std::pair<const char *, uint8_t> ConvertUnicharToFontCharIndex(unichar c) {
+    // for now we have a translation table and in the future we'll have letters with diacritics too (i.e. more font bitmaps)
+    const auto &a = UnaccentTable::Utf8RemoveAccents(c);
+    return std::make_pair(a.str, a.size); // we are returning some number of characters to replace the input utf8 character
+}
 
-void get_char_position_in_font(unichar c, const font_t *pf, uint8_t *charX, uint8_t *charY) {
-    static_assert(sizeof(FCIndex) == 4, "font char indices size mismatch");
-    // convert unichar into font index - all fonts have the same layout, thus this can be computed here
-    // ... and also because doing it in C++ is much easier than in plain C
-    *charX = 15;
-    *charY = 1;
-
-    if (c < uint8_t(pf->asc_min)) { // this really happens with non-utf8 characters on filesystems
-        c = '?';                    // substitute with a '?' or any other suitable character, which is in the range of the fonts
-    }
-    // here is intentionally no else
+void draw_char_and_increment(const font_t *pf, color_t clr_bg, color_t clr_fg, unichar c, int &ref_x, int y, int w) {
+    // FIXME no check for enough space to draw char/chars
     if (c < 128) {
-        // normal ASCII character
-        *charX = (c - pf->asc_min) % 16;
-        *charY = (c - pf->asc_min) / 16;
+        display::DrawChar(point_ui16(ref_x, y), c, pf, clr_bg, clr_fg);
+        ref_x += w;
     } else {
-        // extended utf8 character - must search in the fontCharIndices map
-        const FCIndex *i = std::lower_bound(fontCharIndices, fontCharIndices + fontCharIndicesNumItems, c, [](const FCIndex &i, unichar c) {
-            return i.unc < c;
-        });
-        if (i == fontCharIndices + fontCharIndicesNumItems || i->unc != c) {
-            // character not found
-            *charX = 15; // put '?' as a replacement
-            *charY = 1;
-        } else {
-            *charX = i->charX;
-            *charY = i->charY;
+        auto convertedChar = ConvertUnicharToFontCharIndex(c);
+        for (size_t i = 0; i < convertedChar.second; ++i) {
+            display::DrawChar(point_ui16(ref_x, y), convertedChar.first[i], pf, clr_bg, clr_fg);
+            ref_x += w; // this will screw up character counting for DE language @@TODO
         }
     }
 }
+
+#else // !UNACCENT
+
+void draw_char_and_increment(const font_t *pf, color_t clr_bg, color_t clr_fg, unichar c, int &ref_x, int y, int w) {
+    display::DrawChar(point_ui16(ref_x, y), c, pf, clr_bg, clr_fg);
+    ref_x += w;
+}
+
+#endif
 
 /// Fill space from [@top, @left] corner to the end of @rc with height @h
 /// If @h is too high, it will be cropped so nothing is drawn outside of the @rc but
@@ -82,50 +73,47 @@ void fill_between_rectangles(const Rect16 *r_out, const Rect16 *r_in, color_t co
 }
 
 /// Draws a text into the specified rectangle @rc
-/// It stores characters in buffer and then draws them all at once. Characters that doesn't fit within the rectangle are ignored.
+/// If a character does not fit into the rectangle the drawing is stopped
 /// \param clr_bg background color
 /// \param clr_fg font/foreground color
 /// \returns size of drawn area
 /// Draws unused space of @rc with @clr_bg
 template <class T>
 size_ui16_t render_line(T &textWrapper, Rect16 rc, string_view_utf8 &str, const font_t *pf, color_t clr_bg, color_t clr_fg) {
-    if (!pf || pf->w == 0 || pf->h == 0 || rc.Width() < pf->w || rc.Height() < pf->h)
-        return size_ui16_t { 0, 0 };
+    int x = rc.Left();
+    int y = rc.Top();
+    size_t drawn_chars = 0;
 
-    point_ui16_t pt = point_ui16(rc.Left(), rc.Top());
-    const uint16_t fnt_w = pf->w; // char width
-    const uint16_t fnt_h = pf->h; // char height
+    const int w = pf->w; //char width
 
-    uint16_t buff_char_capacity = display::BufferPixelSize() / (fnt_w * fnt_h);
-    uint16_t line_char_cnt = rc.Width() / fnt_w; // character count - rects are calculated through font measurings (newlines are ignored)
-    uint16_t chars_cnt = 0;                      // character count of currently drawn loop iteration
-    uint16_t chars_left = line_char_cnt;         // characters left to draw
+    // prepare for stream processing
+    unichar c = 0;
 
-    for (uint16_t i = 0; i * buff_char_capacity < line_char_cnt; i++) {
-        chars_cnt = chars_left > buff_char_capacity ? buff_char_capacity : chars_left;
-        // Storing text in the display buffer
-        // It has to know how many chars will be stored to correctly compute display buffer offsets
-        for (uint16_t j = 0; j < chars_cnt; j++) {
-            unichar c = textWrapper.character(str);
-            if (c == '\n') {
-                j--; // j have to be unaffected by new line character
-            } else {
-                display::StoreCharInBuffer(chars_cnt, j, c, pf, clr_bg, clr_fg);
-            }
+    while (true) {
+        c = textWrapper.character(str);
+
+        if (c == 0)
+            break;
+
+        /// Break line char or drawable char won't fit into this line any more
+        if (c == '\n') {
+            break; /// end of single line => no more text to print
         }
-        // Drawing from the buffer
-        if (chars_cnt > 0) {
-            chars_left -= chars_cnt;
-            display::DrawFromBuffer(pt, chars_cnt * fnt_w, fnt_h);
-            pt.x += chars_cnt * fnt_w;
+
+        if (x + w > rc.EndPoint().x) {
+            break;
         }
+
+        /// draw part
+        draw_char_and_increment(pf, clr_bg, clr_fg, c, x, y, w);
+        ++drawn_chars;
     }
 
-    return size_ui16(fnt_w * line_char_cnt, fnt_h);
+    return size_ui16_t { uint16_t(drawn_chars * w), rc.Height() };
 }
 
 /// Draws a text into the specified rectangle @rc
-/// If a character does not fit into the rectangle it will be ignored
+/// If a character does not fit into the rectangle the drawing is stopped
 /// \param clr_bg background color
 /// \param clr_fg font/foreground color
 /// \returns size of drawn area

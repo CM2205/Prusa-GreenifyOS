@@ -4,13 +4,11 @@
 #include "os_porting.hpp"
 #include "tls/tls.hpp"
 #include "socket.hpp"
-#include "crc32.h"
 
 #include <cmsis_os.h>
 #include <log.h>
 
 #include <cassert>
-#include <cstring>
 #include <debug.h>
 #include <cstring>
 #include <optional>
@@ -37,15 +35,30 @@ namespace con {
 
 namespace {
 
-    uint32_t cfg_crc(configuration_t &config) {
-        uint32_t crc = 0;
-        crc = crc32_calc_ex(crc, reinterpret_cast<const uint8_t *>(config.host), strlen(config.host));
-        crc = crc32_calc_ex(crc, reinterpret_cast<const uint8_t *>(config.token), strlen(config.token));
-        crc = crc32_calc_ex(crc, reinterpret_cast<const uint8_t *>(&config.port), sizeof config.port);
-        crc = crc32_calc_ex(crc, reinterpret_cast<const uint8_t *>(&config.tls), sizeof config.tls);
-        crc = crc32_calc_ex(crc, reinterpret_cast<const uint8_t *>(&config.enabled), sizeof config.enabled);
-        return crc;
-    }
+    class PreparedFactory final : public ConnectionFactory {
+    private:
+        const char *hostname;
+        uint16_t port;
+        Connection *conn;
+
+    public:
+        PreparedFactory(const char *hostname, uint16_t port, Connection *conn)
+            : hostname(hostname)
+            , port(port)
+            , conn(conn) {}
+        virtual std::variant<Connection *, Error> connection() override {
+            if (auto err = conn->connection(hostname, port); err.has_value()) {
+                return *err;
+            }
+            return conn;
+        }
+        virtual const char *host() override {
+            return hostname;
+        }
+        virtual void invalidate() override {
+            // NOP, this thing is single-use anyway.
+        }
+    };
 
     class BasicRequest final : public Request {
     private:
@@ -159,45 +172,7 @@ namespace {
     // handle larger responses. We need some kind of parse-as-it-comes approach
     // for that.
     const constexpr size_t MAX_RESP_SIZE = 256;
-
-    using Cache = variant<monostate, tls, socket_con, Error>;
 }
-
-class connect::CachedFactory final : public ConnectionFactory {
-private:
-    const char *hostname = nullptr;
-    Cache cache;
-
-public:
-    virtual variant<Connection *, Error> connection() override {
-        // Note: The monostate state should not be here at this moment, it's only after invalidate and similar.
-        if (Connection *c = get_if<tls>(&cache); c != nullptr) {
-            return c;
-        } else if (Connection *c = get_if<socket_con>(&cache); c != nullptr) {
-            return c;
-        } else {
-            Error error = get<Error>(cache);
-            // Error is just one-off. Next time we'll try connecting again.
-            cache = monostate();
-            return error;
-        }
-    }
-    virtual const char *host() override {
-        return hostname;
-    }
-    virtual void invalidate() override {
-        cache = monostate();
-    }
-    template <class C>
-    void refresh(const char *hostname, C &&callback) {
-        this->hostname = hostname;
-        if (holds_alternative<monostate>(cache)) {
-            callback(cache);
-        }
-        assert(!holds_alternative<monostate>(cache));
-    }
-    uint32_t cfg_fingerprint = 0;
-};
 
 connect::ServerResp connect::handle_server_resp(Response resp) {
     if (resp.content_length() > MAX_RESP_SIZE) {
@@ -241,7 +216,7 @@ connect::ServerResp connect::handle_server_resp(Response resp) {
     }
 }
 
-optional<Error> connect::communicate(CachedFactory &conn_factory) {
+optional<Error> connect::communicate() {
     configuration_t config = core.get_connect_config();
 
     if (!config.enabled) {
@@ -258,30 +233,18 @@ optional<Error> connect::communicate(CachedFactory &conn_factory) {
         return nullopt;
     }
 
-    // Make sure to reconnect if the configuration changes (we ignore the
-    // 1:2^32 possibility of collision).
-    const uint32_t cfg_fingerprint = cfg_crc(config);
-    if (cfg_fingerprint != conn_factory.cfg_fingerprint) {
-        conn_factory.cfg_fingerprint = cfg_fingerprint;
-        conn_factory.invalidate();
+    // TODO: Any nicer way to do this in C++?
+    variant<tls, socket_con> connection_storage;
+    Connection *connection;
+    if (config.tls) {
+        connection_storage.emplace<tls>();
+        connection = &std::get<tls>(connection_storage);
+    } else {
+        connection_storage.emplace<socket_con>();
+        connection = &std::get<socket_con>(connection_storage);
     }
 
-    // Let it reconnect if it needs it.
-    conn_factory.refresh(config.host, [&](Cache &cache) {
-        Connection *connection;
-        if (config.tls) {
-            cache.emplace<tls>();
-            connection = &std::get<tls>(cache);
-        } else {
-            cache.emplace<socket_con>();
-            connection = &std::get<socket_con>(cache);
-        }
-
-        if (const auto result = connection->connection(config.host, config.port); result.has_value()) {
-            cache = *result;
-        }
-    });
-
+    PreparedFactory conn_factory(config.host, config.port, connection);
     HttpClient http(conn_factory);
 
     BasicRequest request(core, printer_info, config, action);
@@ -294,9 +257,6 @@ optional<Error> connect::communicate(CachedFactory &conn_factory) {
     }
 
     Response resp = get<Response>(result);
-    if (!resp.can_keep_alive) {
-        conn_factory.invalidate();
-    }
     switch (resp.status) {
     // The server has nothing to tell us
     case Status::NoContent:
@@ -350,11 +310,9 @@ void connect::run() {
     //FIXME! some mechanisms to know that file-system and network are ready.
     osDelay(10000);
 
-    CachedFactory conn_factory;
-
     while (true) {
         // TODO: Deal with the error somehow
-        communicate(conn_factory);
+        communicate();
     }
 }
 
