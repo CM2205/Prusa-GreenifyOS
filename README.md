@@ -7,7 +7,7 @@ The source code provided here is identical to that of the official Prusa FW with
 1. The images located in src/gui/res/png andsrc/gui/res/cc have green UI elements instead of the default orange color. 
 2. The GUI's orange color (defined in src/gui/include/guitypes.h) has been overwritten in favor of the customized green color. This is the change responsible for changing the GUI's orange menu to the customized green color. 
 
-Note: This project was created with the most up to date source code at the time. As updates will likely be constant for the official firmware, I cannot guarantee that greenifyOS will remain in sync with these changes. In fact, it may very well be the case that updates only come on a fixed timeline (every couple of months or so). 
+Note: This project was created with the most up to date source code at the time. As updates will likely be constant for the official firmware, I cannot guarantee that greenifyOS will remain in sync with these changes. In fact, it may very well be the case that updates only come on a fixed timeline (every couple of months or so, if ever). 
 
 For those interested in applying these cosmetic changes to a future release of Prusa firmware, the assets which were adjusted can be added to their respective locations and compiled alongside the stock firmware. Additionally, the change to the guitypes header can be manually implemented by the user. 
 
